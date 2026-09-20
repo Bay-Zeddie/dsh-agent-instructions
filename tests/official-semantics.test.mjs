@@ -101,7 +101,13 @@ check('行不存在时返回未启用', parseAgentInstructionsRow('- id: other\n
 })
 
 console.log('\n【3】项目根识别与目录链顺序（宽泛 → 具体）')
-{
+if (!existsSync(HARNESS_ROOT)) {
+  // 这组要拿**真实的 dsh 源码树**当样本（靠它的 `.git` 与目录层级）。
+  // 干净环境（CI、别人的机器）没有这棵树 ⇒ **整组跳过**，而不是拿一个不存在的路径硬跑：
+  // 后者会稳定产出 4 个假失败，把真实信号淹没 —— CI 第一次跑就是这么暴露出来的。
+  console.log(`  ⏭ 跳过整组：HARNESS_ROOT 不存在（${HARNESS_ROOT}）`)
+  console.log('     想跑这 5 项：DSH_HARNESS_ROOT=<dsh 源码绝对路径> node tests/official-semantics.test.mjs')
+} else {
   const nested = join(HARNESS_ROOT, 'packages', 'host', 'webserver')
   const root = await findProjectRoot(nested, ['.git'])
   check('从深层目录向上找到 .git 根', root.replaceAll('\\', '/').toLowerCase(), HARNESS_ROOT.replaceAll('\\', '/').toLowerCase())
