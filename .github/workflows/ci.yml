@@ -1,0 +1,46 @@
+name: CI
+
+# 目标：把"测试全过"从口头承诺变成**机器可验证的绿灯**。
+# 同时覆盖 3 个平台 —— 本项目此前只在 Windows 上验证过，
+# 路径大小写敏感性、原子写 rename 语义、换行符处理这三处都可能有平台差异。
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  # 同一分支连续推送时取消上一次未跑完的，省 CI 额度
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: ${{ matrix.os }} · Node ${{ matrix.node }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false        # 一个平台挂了，其他继续跑完，便于一次性看全貌
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        node: [20, 22]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+
+      # 四套测试各自独立，任何一套失败都会让整个 job 变红。
+      # 不需要 npm install —— 插件**零依赖**，测试也只用 Node 内置模块。
+      - name: 语义单测（官方语义复刻 + 改名往返）
+        run: node tests/official-semantics.test.mjs
+
+      - name: 接口契约（真实调用 4 条路由 + 字段双向差分）
+        run: node tests/contract.test.mjs
+
+      - name: 静态审计（死代码 / 文案键双向 / CSS 模板串 / 安全不变量）
+        run: node tests/audit-bundle.mjs
+
+      - name: 随机化测试（18 组性质，固定种子）
+        run: node tests/fuzz-local.mjs

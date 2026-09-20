@@ -1,5 +1,8 @@
 # dsh-agent-instructions
 
+[![CI](https://github.com/Bay-Zeddie/dsh-agent-instructions/actions/workflows/ci.yml/badge.svg)](https://github.com/Bay-Zeddie/dsh-agent-instructions/actions/workflows/ci.yml)
+[![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
+
 给 **dsh 原生的 `AGENTS.md`** 加一个 Web UI 编辑器，并把官方的指令加载语义如实反映到界面上。
 
 人格、称呼、语气这些内容**就写在 `AGENTS.md` 里**，由你自己撰写 —— 插件不管内容语义。
