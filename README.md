@@ -4,6 +4,16 @@
 
 人格、称呼、语气这些内容**就写在 `AGENTS.md` 里**，由你自己撰写 —— 插件不管内容语义。
 
+```sh
+# 安装（在任意目录执行）
+dsh plugin --profile web add github:Bay-Zeddie/dsh-agent-instructions
+dsh web           # 重启后生效
+```
+
+装好后在 **设置 → Agent 身份与指令** 打开（或点右下角浮动按钮）。
+
+> 想改代码：`git clone` 后 `dsh plugin --profile web add <本地绝对路径>`，改完刷新页面即可（client 侧热生效）。
+
 - ✅ 读 / 改 / 存 **任意一层**：`<DSH_HOME>/AGENTS.md` 与工作区链上每一层的 4 个候选名
 - ✅ **指令预算可视化**：复刻官方发现链，算真实的字节占用与超预算裁剪
 - ✅ **列表即编辑器**：按读取顺序列出每一层，**点哪一行就在下面编辑那一份**（每个标作用范围 + 字节 + 状态点：生效 / 已暂停 / 太长会被丢掉 / 太长会被截断 / 不会被读取 / 内容重复）
@@ -389,6 +399,20 @@ host 改了响应字段、client 忘了跟进，运行时只会得到一个 `und
 > 否则等于把检查悄悄废掉。
 
 ---
+
+## 访问范围（这个插件碰什么、不碰什么）
+
+> 收录指南要求 README 讲清"插件访问什么"，这里如实列出。host 侧只 `import` 了
+> `node:crypto` / `node:fs` / `node:fs/promises` / `node:os` / `node:path` —— **没有任何网络模块**。
+
+| 类别 | 具体范围 |
+|---|---|
+| **读** | ① 指令链上的候选文件（`AGENTS.md` / `CLAUDE.md` / `AGENTS.local.md` / `CLAUDE.local.md` 及其 `.disabled` 变体）<br>② `settings.yaml` —— **只读** `agent-presets.default` 一个字段（取 preset 名）<br>③ 该 preset 的 `agent.cordis.yml` —— **只读** `maxBytes`（渲染预算上限）<br>④ `.git` —— 仅作为"项目根"的**存在性标记**探测，**不读其内容** |
+| **写** | **仅限指令链白名单内的文件**：`AGENTS.md` / `AGENTS.local.md` 及其 `.disabled` 变体。<br>落盘走**原子写**（同目录临时文件 + `rename`，中途崩溃不会截断原文件）；写入前会弹确认框 |
+| **改名** | 同上白名单 —— 「暂停/恢复」靠**加/去 `.disabled` 后缀**实现，**内容一个字节不删** |
+| **网络** | **零外部请求**。不发任何出站连接；也不向任何第三方上报数据 |
+| **会话** | **不读取**。插件不碰 session 记录、不读对话内容 |
+| **拒绝的路径** | 链外路径一律拒绝（实测 6 类链外路径必须返回 403）；`base` 必须是**官方候选名位置**，`.disabled` 由 base 推导、不接受外部直接指定 |
 
 ## 安装 / 卸载
 
