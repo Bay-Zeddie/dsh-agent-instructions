@@ -217,7 +217,15 @@ console.log('\n【6】入口护栏 guard()（回环 + 同源 + 护栏头 + 写�
      仍显示"两个选项指向同一个文件"（那时全局目标其实已变成 .disabled）。 */
   const samePath = __test.samePath
   check('同一路径 → 同一文件', samePath('C:\\Users\\X\\.dsh\\AGENTS.md', 'C:\\Users\\X\\.dsh\\AGENTS.md'), true)
-  check('大小写不同 → 仍是同一文件（Windows）', samePath('C:\\Users\\X\\.dsh\\AGENTS.md', 'c:\\users\\x\\.dsh\\agents.md'), true)
+  // ⚠️ 这条**必须按平台断言**：Windows 文件系统大小写不敏感（同一个文件），
+  // Linux / macOS 敏感（**两个不同的文件**）。`samePath()` 内部就是按平台决定的，
+  // 所以期望值不能写死 —— 之前写死 `true`，导致在 Linux（CI 的 ubuntu/macos）上必红。
+  const ci = process.platform === 'win32'
+  check(
+    `大小写不同 → ${ci ? '仍是同一文件（Windows）' : '视为不同文件（Linux/macOS）'}`,
+    samePath('C:\\Users\\X\\.dsh\\AGENTS.md', 'c:\\users\\x\\.dsh\\agents.md'),
+    ci,
+  )
   check('暂停态：.disabled 与 AGENTS.md 不是同一文件', samePath('C:\\Users\\X\\.dsh\\AGENTS.md.disabled', 'C:\\Users\\X\\.dsh\\AGENTS.md'), false)
   check('非字符串 → 不是同一文件', samePath(undefined, 'a'), false)
 
