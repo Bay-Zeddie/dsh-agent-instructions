@@ -1,0 +1,10 @@
+# 验证产物：截图、临时 fixture 工作区、验证实例日志 —— 都不进版本库
+.verify/
+
+# 依赖与构建产物
+node_modules/
+*.log
+
+# 编辑器 / 系统
+.DS_Store
+Thumbs.db
