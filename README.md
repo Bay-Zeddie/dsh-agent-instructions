@@ -1,4 +1,4 @@
-# dsh-agent
+# dsh-agent-instructions
 
 给 **dsh 原生的 `AGENTS.md`** 加一个 Web UI 编辑器，并把官方的指令加载语义如实反映到界面上。
 
@@ -38,14 +38,14 @@
 ## 文件结构
 
 ```
-dsh-agent/
+dsh-agent-instructions/
 ├─ package.json                      ← 插件清单：dsh.bundle.patch + dsh.client.platform=web
 ├─ cordis.patch.yml                  ← 挂载声明（insert 一行，注入 webServer）
 ├─ lib/
 │  ├─ index.js                       ← Host 侧：4 条回环路由 + 安全栅栏 + 官方语义复刻 + 链内白名单
 │  └─ client.js                      ← 浏览器侧：React + 官方 ui-primitives + 设置页独立页
 └─ tests/
-   ├─ official-semantics.test.mjs    ← 语义单测（99 项）：官方语义复刻 + 改名往返 + 工作区==DSH_HOME 回归
+   ├─ official-semantics.test.mjs    ← 语义单测（100 项）：官方语义复刻 + 改名往返 + 工作区==DSH_HOME 回归
    ├─ contract.test.mjs              ← 接口契约：真实调用 4 条路由，逐字段核对「谁提供、谁消费」
    ├─ audit-bundle.mjs               ← 静态审计：死代码 / 冗余文案键 / 孤立 CSS / 安全不变量
    └─ fuzz-local.mjs                 ← 随机化测试（固定种子）：18 组性质，含白名单拒绝面
@@ -402,10 +402,10 @@ dsh web
 
 ```sh
 # 卸载：先注销，再删链接与源码（顺序不要反，否则会在 profile 里留下断链）
-dsh plugin --profile web remove dsh-agent
+dsh plugin --profile web remove dsh-agent-instructions
 ```
 
-> `pnpm remove` **不会**清理 `node_modules/dsh-agent` 符号链接（link 安装的通病），需手动删除该链接。
+> `pnpm remove` **不会**清理 `node_modules/dsh-agent-instructions` 符号链接（link 安装的通病），需手动删除该链接。
 > link 安装时依赖必须装在**插件源码目录**（Node 从源码 realpath 解析）。
 
 ---
@@ -493,12 +493,18 @@ dsh 生态的"上架"= 往收录列表 [awesome-dsh-plugin](https://github.com/a
 | 截图（**可选**、推荐 1-8 张）：在**自己仓库**的 `package.json` 旁放 `screenshots.json`，图片须 GitHub 托管 | ⏳ 待建仓后添加 |
 | 发布到 npm（**可选**，与收录无关，只影响商店的下载量排序） | ⏳ 可选 |
 
-### 当前差距（都在"仓库层面"，不在代码层面）
+### 上架进度
 
-1. **尚未建立 git 仓库** —— 收录必须提供仓库地址，且 CI 检查仓库年龄
-2. `package.json` 的 `repository` 仍是占位符 `github.com/local/dsh-agent` —— 建仓后需换成真实地址
-3. 尚未添加 `dsh-plugin` topic
-4. 尚未提交收录 PR
+| 项 | 状态 |
+|---|---|
+| 真实可用代码 / `dsh.bundle` manifest / `cordis.patch.yml` | ✅ 达标（收录指南点名：**只声明 `dsh.client` 是最常见被拒原因**，我们两者都有） |
+| 活跃维护 / 描述无营销词 | ✅ 达标 |
+| 本地 git 仓库 | ✅ 已建（`main` 分支） |
+| `package.json` 的 `repository` | ✅ 已指向真实地址（曾为占位符 `github.com/local/...`） |
+| 推送到 GitHub | ⏳ 待推（`Bay-Zeddie/dsh-agent-instructions`） |
+| `dsh-plugin` topic | ⏳ 待加（推送后到仓库 Settings → Topics 添加） |
+| 收录 PR | ⏳ 待提（`beancookie/awesome-dsh-plugin`：在其 `README.md` 与 `README.en.md` **各加一行**，分类内按 owner/repo 字母序，CI 会校验顺序） |
+| 发布到 npm（**可选**） | ⏳ 可选（与收录无关，只影响商店的下载量排序） |
 
 > 提醒：`peerDependencies` 若要声明官方 `@deepseek-ai/*` 包，范围必须**显式带上预发布分支**，
 > 否则会静默排除 harness 的所有 `x.y.z-alpha.*` 构建（例：`">=0.1.0-rc.1 <0.2.0-0"`）。

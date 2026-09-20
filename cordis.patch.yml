@@ -1,6 +1,6 @@
-# dsh-agent bundle patch: 在 web profile 里挂载一个 Host 行。
+# dsh-agent-instructions bundle patch: 在 web profile 里挂载一个 Host 行。
 # 该行名从 profile 自己的 node_modules 解析（dsh plugin --profile web add <path> 装到哪里就从哪里解析）。
 - insert:
-    - id: dsh-agent
-      name: dsh-agent
+    - id: dsh-agent-instructions
+      name: dsh-agent-instructions
       inject: [webServer]
