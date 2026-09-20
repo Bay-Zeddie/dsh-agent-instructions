@@ -1,6 +1,6 @@
 {
   "name": "dsh-agent-instructions",
-  "version": "0.4.12",
+  "version": "0.4.13",
   "description": "在 dsh Web 设置页里编辑原生 AGENTS.md 的面板：指令链上每一层都是可点击的编辑入口，三种生效范围（工作区 + 全局 / 仅工作区 / 仅全局）通过给文件名加 .disabled 切换（内容不删），并可视化官方指令预算与分层占用。",
   "type": "module",
   "main": "lib/index.js",

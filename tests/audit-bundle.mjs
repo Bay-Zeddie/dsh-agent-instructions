@@ -143,7 +143,7 @@ for (const name of hostDefs) {
   console.log(`  ${dead ? '⚠️' : '  '} ${name} 引用=${count}${exported ? '（单测导出）' : ''}`)
 }
 
-console.log('\n【4】CSS 模板字符串反引号自查')
+console.log('\n【6】CSS 模板字符串反引号自查')
 // CSS 写在模板字符串里（`const css = \`…\``）⇒ **注释或内容里混入反引号会提前结束字符串**，
 // 后果是 SyntaxError，但报错行指向注释、看起来与"注释"无关，极易看偏（实测踩过两次）。
 // 判据：从 `const css = \`` 起逐行累计反引号，遇到以反引号开头的行即为结尾；总数必须恰好 2。
@@ -166,6 +166,85 @@ console.log('\n【4】CSS 模板字符串反引号自查')
     if (close < 0) problems.push('CSS 模板字符串没有以单独一行的反引号结束')
     else if (ticks !== 2) problems.push(`CSS 段内反引号 ${ticks} 个（应为 2）—— 注释里混入了反引号？`)
     console.log(`  第 ${start + 1}–${close + 1} 行（${close - start + 1} 行）· 反引号 ${ticks} 个`)
+  }
+}
+
+console.log('\n【7】Host 侧文案表（TEXT）：双向一致 + 无硬编码漏网')
+// 存在理由（实测踩过）：Host 的面向用户文案是当**数据**发给客户端原样渲染的，
+// 不经过任何翻译层。曾经 `planeNote` 写死中文 ⇒ 英文界面里冒出一行中文，
+// 而且"加个 zh/en 词典"这种修法会再次悄悄漏掉新文案 —— 所以这里同时查三件事：
+//   ① zh / en 键集合必须一致（不能只补一边）
+//   ② 被调用的键必须有定义，定义了的键必须被调用（双向，杜绝拼错和死键）
+//   ③ TEXT 块**之外**不得再出现面向用户的中文（服务端日志除外）
+{
+  const hostLines = hostSrc.split(/\r?\n/)
+  const dictStart = hostLines.findIndex((l) => l.includes('const TEXT = {'))
+  if (dictStart < 0) {
+    problems.push('找不到 Host 侧文案表 const TEXT = {')
+    console.log('  ❌ 起始行未找到')
+  } else {
+    const keys = { zh: [], en: [] }
+    let section = null
+    let depth = 0
+    let dictEnd = -1
+    for (let i = dictStart; i < hostLines.length; i += 1) {
+      const line = hostLines[i]
+      const open = line.match(/^ {2}(zh|en): \{/)
+      if (open) section = open[1]
+      if (section) {
+        const key = line.match(/^ {4}([A-Za-z][A-Za-z0-9]*):/)
+        if (key) keys[section].push(key[1])
+      }
+      for (const ch of line) {
+        if (ch === '{') depth += 1
+        else if (ch === '}') depth -= 1
+      }
+      if (i > dictStart && depth === 0) {
+        dictEnd = i
+        break
+      }
+    }
+
+    console.log(`  第 ${dictStart + 1}–${dictEnd + 1} 行 · zh=${keys.zh.length} 键 · en=${keys.en.length} 键`)
+    const onlyZh = keys.zh.filter((k) => !keys.en.includes(k))
+    const onlyEn = keys.en.filter((k) => !keys.zh.includes(k))
+    if (onlyZh.length) problems.push(`Host 文案只有 zh 的键：${onlyZh.join(', ')}`)
+    if (onlyEn.length) problems.push(`Host 文案只有 en 的键：${onlyEn.join(', ')}`)
+    console.log(`  只在 zh：${onlyZh.length ? onlyZh.join(', ') : '无'}｜只在 en：${onlyEn.length ? onlyEn.join(', ') : '无'}`)
+
+    // 调用形态：第一个字符串字面量就是键。第一个实参可能是 `lang`，也可能是
+    // `requestLang(req)` —— **不能用「逗号前不许有括号」的写法**，那样会把
+    // `T(requestLang(req), 'k')` 整类调用漏掉，误报成"定义了但从未调用"。
+    // 扫描前先剥掉注释，免得文档示例里的 `T(lang, 'k')` 冒充真实调用。
+    const hostCode = hostSrc
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .replace(/^\s*\/\/.*$/gm, '')
+    const called = new Set()
+    // `(?<!function )` 排掉**函数声明本身** `function T(lang, key) {` —— 否则它会一路
+    // 匹配到函数体里 `typeof value === 'function'` 的单引号，凭空造出一个键名 `function`。
+    for (const m of hostCode.matchAll(/(?<!function )\bT\([^']*'([A-Za-z][A-Za-z0-9]*)'/g)) called.add(m[1])
+    const missingHost = [...called].filter((k) => !keys.zh.includes(k))
+    const unusedHost = keys.zh.filter((k) => !called.has(k))
+    if (missingHost.length) problems.push(`Host 侧调用了但未定义的文案键：${missingHost.join(', ')}`)
+    if (unusedHost.length) problems.push(`Host 侧定义了但从未调用的文案键：${unusedHost.join(', ')}`)
+    console.log(`  调用 ${called.size} 个 → 未定义：${missingHost.length ? missingHost.join(', ') : '无'}`)
+    console.log(`  定义 ${keys.zh.length} 个 → 未被调用：${unusedHost.length ? unusedHost.join(', ') : '无'}`)
+
+    // ③ TEXT 块之外不得有面向用户的中文（内联 `// 注释` 先剥掉；服务端日志放行）
+    const stray = []
+    hostLines.forEach((line, index) => {
+      if (index >= dictStart && index <= dictEnd) return
+      const trimmed = line.trim()
+      if (trimmed.startsWith('//') || trimmed.startsWith('*') || trimmed.startsWith('/*')) return
+      const slash = line.indexOf('//')
+      const code = slash >= 0 ? line.slice(0, slash) : line
+      if (!/[\u4e00-\u9fff]/.test(code)) return
+      if (code.includes('ctx.logger')) return
+      stray.push(`L${index + 1}: ${trimmed.slice(0, 60)}`)
+    })
+    if (stray.length) problems.push(`TEXT 之外仍有面向用户的中文：${stray.length} 处`)
+    console.log(`  TEXT 之外的硬编码中文：${stray.length ? '' : '无'}`)
+    for (const item of stray) console.log(`     · ${item}`)
   }
 }
 

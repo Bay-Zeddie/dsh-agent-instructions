@@ -342,5 +342,38 @@ console.log('\n【5】关键契约要点（即使字段名对得上，语义也�
   check('/file 响应的 file.enabled 是布尔（与 /state 一致）', typeof saved.file.enabled, 'boolean')
 }
 
+console.log('\n【6】界面语言跟随 dsh：请求头 x-dsh-lang 决定 Host 文案')
+// 存在理由：Host 的面向用户文案是当**数据**发给客户端原样渲染的，不经过翻译层。
+// 曾经 `planeNote` 与全部错误文案都写死中文 ⇒ dsh 切成英文时界面里仍冒中文。
+// 这里实测三个方向：zh / en / 无头回落，以及 accept-language 的近似兜底。
+{
+  const hasCjk = (value) => /[\u4e00-\u9fff]/.test(String(value ?? ''))
+  const langState = (headers) => call('/api/dsh-agent/state', { query: q(REPO), headers })
+
+  const zh = await langState({ 'x-dsh-lang': 'zh' })
+  const en = await langState({ 'x-dsh-lang': 'en' })
+  const none = await langState()
+  const acceptEn = await langState({ 'accept-language': 'en-US,en;q=0.9' })
+  const acceptZh = await langState({ 'accept-language': 'zh-CN,zh;q=0.9,en;q=0.8' })
+
+  const pZh = zh.body.budget.planeNote
+  const pEn = en.body.budget.planeNote
+  check('planeNote 有值（否则这一组测不到东西）', typeof pZh === 'string' && pZh.length > 0, true)
+  check('x-dsh-lang: zh → planeNote 是中文', hasCjk(pZh), true)
+  check('x-dsh-lang: en → planeNote 无中日韩字符', hasCjk(pEn), false)
+  check('  且两份文案确实不同（说明真的切了，不是同一份）', pZh !== pEn, true)
+  check('不带语言头 → 回落中文（保持既有默认行为，老调用方不退化）', hasCjk(none.body.budget.planeNote), true)
+  check('只有 accept-language: en（无自有头）→ 走英文', hasCjk(acceptEn.body.budget.planeNote), false)
+  check('只有 accept-language: zh → 走中文', hasCjk(acceptZh.body.budget.planeNote), true)
+
+  // 错误文案同样是直接显示给用户的，必须一起跟随
+  const badBody = { cwd: REPO, scope: 'workspace' }
+  const badZh = await call('/api/dsh-agent/file', { method: 'PUT', body: badBody, headers: { 'x-dsh-lang': 'zh' } })
+  const badEn = await call('/api/dsh-agent/file', { method: 'PUT', body: badBody, headers: { 'x-dsh-lang': 'en' } })
+  check('缺 content 的写请求被拒（400）', badZh.status, 400)
+  check('x-dsh-lang: zh → 错误文案是中文', badZh.body.error, '缺少 content 字段')
+  check('x-dsh-lang: en → 错误文案是英文', badEn.body.error, 'Missing content field')
+}
+
 console.log(`\n结果：${pass} 通过 / ${fail} 失败\n`)
 process.exit(fail === 0 ? 0 : 1)
