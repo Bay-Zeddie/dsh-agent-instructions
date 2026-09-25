@@ -1,5 +1,6 @@
-# dsh-agent-instructions bundle patch: 在 web profile 里挂载一个 Host 行。
-# 该行名从 profile 自己的 node_modules 解析（dsh plugin --profile web add <path> 装到哪里就从哪里解析）。
+# dsh-agent-instructions bundle patch: 在 profile 里挂载一个 Host 行。
+# 桌面端与 CLI profile 同一装载路径；该行名从所在 profile 自己的 node_modules
+# 解析（插件链接/安装到哪个 profile，就从哪个 profile 解析）。
 - insert:
     - id: dsh-agent-instructions
       name: dsh-agent-instructions

@@ -8,14 +8,14 @@
 人格、称呼、语气这些内容**就写在 `AGENTS.md` 里**，由你自己撰写 —— 插件不管内容语义。
 
 ```sh
-# 安装（在任意目录执行）
+# CLI 宿主安装（桌面端在「插件」页装，或直接改 profile 的 package.json）
 dsh plugin --profile web add github:Bay-Zeddie/dsh-agent-instructions
-dsh web           # 重启后生效
+# 重启宿主后生效（桌面端重启应用，CLI 重启 dsh web）
 ```
 
 装好后在 **设置 → Agent 身份与指令** 打开（或点右下角浮动按钮）。
 
-> 想改代码：`git clone` 后 `dsh plugin --profile web add <本地绝对路径>`，改完刷新页面即可（client 侧热生效）。
+> 想改代码：`git clone` 后以本地路径安装（桌面端「插件」页或 CLI `dsh plugin --profile <name> add <本地绝对路径>`），改完刷新页面即可（client 侧热生效；host 侧改动需重启宿主）。
 
 - ✅ 读 / 改 / 存 **任意一层**：`<DSH_HOME>/AGENTS.md` 与工作区链上每一层的 4 个候选名
 - ✅ **指令预算可视化**：复刻官方发现链，算真实的字节占用与超预算裁剪
@@ -60,16 +60,17 @@ dsh web           # 重启后生效
 ## 安装 / 卸载
 
 ```sh
-# 安装（在插件目录内执行）
-dsh plugin --profile web add .
+# 桌面端（推荐）：在应用的「插件」页以本地路径安装本仓库；
+# 或在 profile 的 package.json 里加 link: 依赖 + bundles 条目后重启应用。
+# CLI 宿主（可选）：
+dsh plugin --profile <profile> add .
 
-# 重启生效（host 侧代码在进程启动时装载）
-dsh web
+# 重启生效（host 侧代码在宿主进程启动时装载，桌面端 / CLI 同一装载路径）
 ```
 
 ```sh
 # 卸载：先注销，再删链接与源码（顺序不要反，否则会在 profile 里留下断链）
-dsh plugin --profile web remove dsh-agent-instructions
+dsh plugin --profile <profile> remove dsh-agent-instructions
 ```
 
 > `pnpm remove` **不会**清理 `node_modules/dsh-agent-instructions` 符号链接（link 安装的通病），需手动删除该链接。
