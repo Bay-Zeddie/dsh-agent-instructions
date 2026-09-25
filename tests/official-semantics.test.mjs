@@ -26,6 +26,7 @@ const {
   GUARD_HEADER,
   pathKey,
   deriveMode,
+  simulateMode,
   buildAllowedTargets,
   buildLayerView,
   planModeChanges,
@@ -366,6 +367,27 @@ try {
       const afterBoth = await buildLayerView(FIX_SUB, globalState)
       check('一键恢复「一起」后模式推导正确', deriveMode(afterBoth), 'both')
       check('恢复后子层文件名回到官方名', existsSync(join(FIX_SUB, 'AGENTS.md')), true)
+    }
+
+    console.log('\n【9b】simulateMode（模式与磁盘现状的物理等价 ⇒ 高亮是否跟随用户选择）')
+    {
+      // 用户实测场景：工作区层的文件尚未创建（桌面端默认把工作区开在 profile 目录）⇒
+      // 链上只有全局一份真实文件，三种范围里有两种落在磁盘上是同一个结果。
+      const onlyGlobalRows = [
+        { base: 'AGENTS.md', layer: 'user-global', exists: true, enabled: true },
+        { base: 'AGENTS.md', layer: 'project', exists: false, enabled: false },
+      ]
+      check('无项目文件：模拟「仅全局」⇒ 与「一起」同一个结果', simulateMode('global', onlyGlobalRows), 'both')
+      check('  host 对这种现状也只能反推出 both（物理等价成立）', deriveMode(onlyGlobalRows), 'both')
+      check('无项目文件：模拟「仅项目」⇒ 全局会被暂停，真的有区别', simulateMode('project', onlyGlobalRows), 'project')
+      check('  host 反推这种现状为 both（与「仅项目」的模拟结果不同 ⇒ 不等价）', deriveMode(onlyGlobalRows), 'both')
+
+      const bothReal = [
+        { base: 'AGENTS.md', layer: 'user-global', exists: true, enabled: true },
+        { base: 'AGENTS.md', layer: 'project', exists: true, enabled: true },
+      ]
+      check('项目文件真实存在：模拟「仅全局」⇒ 真的会变成仅全局', simulateMode('global', bothReal), 'global')
+      check('  此时模拟结果 ≠ 反推结果（both），高亮必须以磁盘现状为准', deriveMode(bothReal), 'both')
     }
   }
 } finally {
