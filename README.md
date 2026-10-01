@@ -3,20 +3,21 @@
 [![CI](https://github.com/Bay-Zeddie/dsh-agent-instructions/actions/workflows/ci.yml/badge.svg)](https://github.com/Bay-Zeddie/dsh-agent-instructions/actions/workflows/ci.yml)
 [![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 
-给 **dsh 原生的 `AGENTS.md`** 加一个 Web UI 编辑器，并把官方的指令加载语义如实反映到界面上。
+给 **dsh 原生的 `AGENTS.md`** 加一个图形编辑面板，并把官方的指令加载语义如实反映到界面上。
 
 人格、称呼、语气这些内容**就写在 `AGENTS.md` 里**，由你自己撰写 —— 插件不管内容语义。
 
 ```sh
-# CLI 宿主安装（桌面端在「插件」页装，或直接改 profile 的 package.json）
-dsh plugin --profile web add github:Bay-Zeddie/dsh-agent-instructions
-# 重启宿主后生效（桌面端重启应用，CLI 重启 dsh web）
+# 桌面端安装：在应用的「插件」页添加本插件（GitHub 地址或本地路径），
+# 或直接改 desktop profile 的 package.json（link: 依赖 + bundles 条目）。
+# 重启应用后生效
 ```
 
-装好后在 **设置 → Agent 身份与指令** 打开（或点右下角浮动按钮）。
+装好后在 **侧边栏 → Agent 指令**（MCP 之下）打开。
 
-> 想改代码：`git clone` 后以本地路径安装（桌面端「插件」页或 CLI `dsh plugin --profile <name> add <本地绝对路径>`），改完刷新页面即可（client 侧热生效；host 侧改动需重启宿主）。
+> 想改代码：`git clone` 后在桌面端「插件」页以本地路径安装，改完刷新页面即可（client 侧热生效；host 侧改动需重启应用）。
 
+- ✅ **侧边栏一级入口**：官方 `sidebar.panellist` + `main` 槽位注册（排在 MCP 之下），与「插件 / 自动化任务」同机制
 - ✅ 读 / 改 / 存 **任意一层**：`<DSH_HOME>/AGENTS.md` 与工作区链上每一层的 4 个候选名
 - ✅ **指令预算可视化**：复刻官方发现链，算真实的字节占用与超预算裁剪
 - ✅ **列表即编辑器**：按读取顺序列出每一层，**点哪一行就在下面编辑那一份**（每个标作用范围 + 字节 + 状态点：生效 / 已暂停 / 太长会被丢掉 / 太长会被截断 / 不会被读取 / 内容重复）
@@ -33,14 +34,12 @@ dsh plugin --profile web add github:Bay-Zeddie/dsh-agent-instructions
 
 > 想改代码 / 了解内部实现？见 [CONTRIBUTING.md](./CONTRIBUTING.md)。
 
-## 界面预览
+## 入口
 
-装好后，dsh 首页的**右下角会出现一个圆形浮动按钮** —— 点它就是本插件的面板
-（也可以从 **设置 → Agent 身份与指令** 进入）：
+唯一入口：**侧边栏 → Agent 指令**（与官方「插件 / 自动化任务」同一套一级面板机制，排在 **MCP 之下**）。
 
-<img src="docs/screenshots/01-entry.png" width="720" alt="dsh 首页右下角的浮动按钮（红圈处）">
-
-> 这个按钮**平时都在**；只有当它会被聊天输入区挡住时才会自动淡出（避免压住发送按钮）。
+> 旧版的右下角浮动按钮已移除；v0.4.18 起设置页入口（`settings.section`）也按主人裁决移除，
+> 面板代码里不再保留设置页 / 回退行 / 模态外壳的任何残留。
 
 ## 访问范围（这个插件碰什么、不碰什么）
 
@@ -60,17 +59,14 @@ dsh plugin --profile web add github:Bay-Zeddie/dsh-agent-instructions
 ## 安装 / 卸载
 
 ```sh
-# 桌面端（推荐）：在应用的「插件」页以本地路径安装本仓库；
-# 或在 profile 的 package.json 里加 link: 依赖 + bundles 条目后重启应用。
-# CLI 宿主（可选）：
-dsh plugin --profile <profile> add .
-
-# 重启生效（host 侧代码在宿主进程启动时装载，桌面端 / CLI 同一装载路径）
+# 安装：在桌面端应用的「插件」页添加本仓库（本地路径或 GitHub 地址）；
+# 或在 desktop profile 的 package.json 里加 link: 依赖 + bundles 条目，然后重启应用。
+# 重启生效（host 侧代码在应用启动时装载）
 ```
 
 ```sh
-# 卸载：先注销，再删链接与源码（顺序不要反，否则会在 profile 里留下断链）
-dsh plugin --profile <profile> remove dsh-agent-instructions
+# 卸载：先在「插件」页移除（或删掉 desktop profile 的 package.json 里的
+# 依赖与 bundles 条目），再删链接与源码 —— 顺序不要反，否则会在 profile 里留下断链
 ```
 
 > `pnpm remove` **不会**清理 `node_modules/dsh-agent-instructions` 符号链接（link 安装的通病），需手动删除该链接。
@@ -107,27 +103,30 @@ dsh plugin --profile <profile> remove dsh-agent-instructions
 
 ## 已知取舍
 
-1. **导航项图标无法自定义** —— `ui-settings-general` 的 `navIcon(id)` 是**硬编码的 if-else 表**（只认 `models` / `agent-presets` / `plugins` / `archived-sessions`，其余兜底为齿轮），且 `settings.section` 的注册选项里**没有 `icon` 字段**。因此机器人图标只出现在**浮动按钮**与**页面标题**这两个自己能控制的表面。
-2. **已接入官方 slot 体系**（设置页独立页 `settings.section`）。**这不需要构建链**：官方客户端产物的依赖形式
+1. **已接入官方 slot 体系**（侧边栏一级面板 `sidebar.panellist` + `main`）。**这不需要构建链**：官方客户端产物的依赖形式
    就是普通 `require`——`require("react")` / `require("react-dom/client")` /
    `require("@deepseek-ai/dsh-client-ui-primitives")`，实测**无需在 `package.json` 里声明**即可解析（走共享静态表），
-   组件用 `React.createElement` 写、不用 JSX。官方注册形式：
+   组件用 `React.createElement` 写、不用 JSX。官方注册形式（行与页面成对，id/key 同值）：
 
    ```js
-   ctx.slots.inject('settings.section', () => ctx.slots.register({
-     name: 'settings.section', id: 'dsh-agent', order: 60, priority: 60, label: <导航文案>,
-   }, Component))
+   ctx.slots.inject('sidebar.panellist', () => ctx.slots.register({
+     name: 'sidebar.panellist', id: PANEL_ID, order: 22, label: () => <文案 thunk>,
+   }, IconComponent))
+   ctx.slots.inject('main', () => ctx.slots.register({
+     name: 'main', key: PANEL_ID,
+   }, PageComponent))
    ```
 
    ⚠️ `ctx.slots.register(options, component)` **只有两个参数**（社区某插件传的第三个 `true` 是多余实参，别照抄）；
-   slot 名未被父节点声明时会 `throw` ⇒ 注册必须包 `try/catch` **并准备回退入口**。
+   slot 名未被父节点声明时会 `throw` ⇒ 注册必须包 `try/catch` 并重试（`slots.inject` 会随父声明自动执行，
+   重试只兜「已声明但抛错」这一种情况）。
    ⚠️ 注意两处同名但语义不同的 `inject`：**bundle 里的 `exports.inject`** 是 **cordis 服务注入表**
    （要用 `ctx.slots` 就得写 `['slots']`）；**`package.json` 的 `dsh.client.inject`** 才是模块/包级别声明。
-3. **不做格式化 / 预览** —— 有意为之：AGENTS.md 是纯文本契约，插件不该重新排版它。
-4. **预算为近似值** —— 只算文件字节，不含官方渲染边框（见上文口径说明）。
-5. **暂停靠改名，会在磁盘上留痕** —— `.disabled` 是**真实的文件名变更**。若该目录是 git 仓库，`git status` 会显示一行改名；
+2. **不做格式化 / 预览** —— 有意为之：AGENTS.md 是纯文本契约，插件不该重新排版它。
+3. **预算为近似值** —— 只算文件字节，不含官方渲染边框（见上文口径说明）。
+4. **暂停靠改名，会在磁盘上留痕** —— `.disabled` 是**真实的文件名变更**。若该目录是 git 仓库，`git status` 会显示一行改名；
    **不 `git add` 就只停在工作区，不进索引、不进历史**（所以"误提交"不是会自动发生的风险，而是需要你主动做的动作）。
    这是"不改官方源码、不写配置"的必然代价，换来的是**随时可逆、内容零损失**。
-6. **未处理工作区目录不存在** —— 保存到不存在的目录会返回 404。
+5. **未处理工作区目录不存在** —— 保存到不存在的目录会返回 404。
 
 ---

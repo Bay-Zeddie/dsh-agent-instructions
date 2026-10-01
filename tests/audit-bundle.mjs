@@ -123,6 +123,10 @@ const invariants = [
   { label: "exports.inject 声明了 'slots'", ok: /exports.inject = [[^]]*'slots'/.test(src) },
   { label: '导出了 apply（否则 loader 报错）', ok: src.includes('exports.apply = apply') },
   { label: '声明了 CLIENT_BUILD 构建标记', ok: /CLIENT_BUILD = 'ui-/.test(src) },
+  { label: '生效范围意图持久化：switchMode 两条路径都写 LS_MODE，挂载时恢复（快路径不落盘，丢了就会"选了又弹回"）',
+    ok: (src.match(/writeStore\(LS_MODE/g)?.length ?? 0) === 2 && src.includes('readStore(LS_MODE') },
+  { label: '侧边栏一级入口：sidebar.panellist 行与 main 面板（同 PANEL_ID）成对注册，卸载成对撤销',
+    ok: src.includes("slots.inject('sidebar.panellist'") && src.includes("slots.inject('main'") },
 ]
 for (const item of invariants) {
   if (!item.ok) problems.push(`不变量被破坏：${item.label}`)
@@ -245,6 +249,75 @@ console.log('\n【7】Host 侧文案表（TEXT）：双向一致 + 无硬编码�
     if (stray.length) problems.push(`TEXT 之外仍有面向用户的中文：${stray.length} 处`)
     console.log(`  TEXT 之外的硬编码中文：${stray.length ? '' : '无'}`)
     for (const item of stray) console.log(`     · ${item}`)
+  }
+}
+
+console.log('\n【8】Client 侧（lib/client.js）：MESSAGES 之外不得有面向用户的中文')
+// 与【7】③ 同源的道理：client 的面向用户文案全部走 MESSAGES + t()；
+// 在 MESSAGES 之外写死中文，英文界面就会漏出中文（曾经：AgentGeneralRow 回退行、
+// prettyPath 兜底、列表连接符「、」都写死过）。console.* 是开发日志，放行。
+// ⚠️ 注释里全是中文 ⇒ 必须先剥注释（含跨行的 /* */，CSS 模板里的注释也是这种形态）。
+{
+  const msgStart = lines.findIndex((l) => l.includes('const MESSAGES = {'))
+  if (msgStart < 0) {
+    problems.push('找不到 client 的 const MESSAGES = {')
+    console.log('  ❌ 起始行未找到')
+  } else {
+    let depth = 0
+    let msgEnd = -1
+    for (let i = msgStart; i < lines.length; i += 1) {
+      for (const ch of lines[i]) {
+        if (ch === '{') depth += 1
+        else if (ch === '}') depth -= 1
+      }
+      if (i > msgStart && depth === 0) {
+        msgEnd = i
+        break
+      }
+    }
+    if (msgEnd < 0) {
+      problems.push('MESSAGES 块没有闭合（大括号不平衡）')
+      console.log('  ❌ MESSAGES 块未闭合')
+    } else {
+      const stray = []
+      let inBlock = false
+      lines.forEach((line, index) => {
+        if (index >= msgStart && index <= msgEnd) return
+        let code = ''
+        let rest = line
+        while (rest) {
+          if (inBlock) {
+            const end = rest.indexOf('*/')
+            if (end < 0) {
+              rest = ''
+              break
+            }
+            inBlock = false
+            rest = rest.slice(end + 2)
+          } else {
+            const open = rest.indexOf('/*')
+            const slash = rest.indexOf('//')
+            if (open >= 0 && (slash < 0 || open < slash)) {
+              code += rest.slice(0, open)
+              inBlock = true
+              rest = rest.slice(open + 2)
+            } else if (slash >= 0) {
+              code += rest.slice(0, slash)
+              rest = ''
+            } else {
+              code += rest
+              rest = ''
+            }
+          }
+        }
+        if (!/[\u3000-\u303f\u4e00-\u9fff]/.test(code)) return
+        if (code.includes('console.')) return // 开发日志放行（与【7】的 ctx.logger 同待遇）
+        stray.push(`L${index + 1}: ${line.trim().slice(0, 60)}`)
+      })
+      if (stray.length) problems.push(`MESSAGES 之外仍有面向用户的中文：${stray.length} 处`)
+      console.log(`  MESSAGES 第 ${msgStart + 1}–${msgEnd + 1} 行 · 之外的硬编码中文：${stray.length ? '' : '无'}`)
+      for (const item of stray) console.log(`     · ${item}`)
+    }
   }
 }
 

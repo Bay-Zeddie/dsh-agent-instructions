@@ -45,5 +45,8 @@ jobs:
       - name: 静态审计（死代码 / 文案键双向 / Host 文案表 / CSS 模板串 / 安全不变量）
         run: node tests/audit-bundle.mjs
 
+      - name: 侧边栏注册契约（真实执行 client factory，stub 浏览器环境）
+        run: node tests/sidebar-registrar.test.mjs
+
       - name: 随机化测试（18 组性质，固定种子）
         run: node tests/fuzz-local.mjs

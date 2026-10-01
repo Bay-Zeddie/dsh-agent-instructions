@@ -130,21 +130,19 @@ console.log('\n【4】原文里的接线不变量（静态核验，防悄悄改�
     src.includes('[LANG_HEADER]: currentLang()'), true)
   check('新增了 x-dsh-lang 头常量', src.includes("const LANG_HEADER = 'x-dsh-lang'"), true)
 
-  // 顺序不变量：语言来源必须在**首次取文案之前**就位（mountFab / mountSettingsEntry 都会取文案）。
+  // 顺序不变量：语言来源必须在**首次取文案之前**就位（侧边栏 label thunk / 面板渲染都会取文案）。
   // ⚠️ 顺序必须在 **apply 函数体内**比对。全文搜会先命中函数**定义**处，
-  //    而 `registerLocale` / `mountSettingsEntry` 的定义顺序与调用顺序毫无关系。
+  //    而 `registerLocale` / `mountSidebarPanel` 的定义顺序与调用顺序毫无关系。
   const applyStart = src.indexOf('function apply(ctx) {')
   const applyBody = applyStart >= 0
     ? src.slice(applyStart, matchBrace(src, src.indexOf('{', applyStart)) + 1)
     : ''
   check('定位到 apply 函数体', applyBody.length > 0, true)
   const iRegister = applyBody.indexOf('registerLocale(ctx)')
-  const iBoot = applyBody.indexOf('const boot = () => {')
-  const iMount = applyBody.indexOf('mountSettingsEntry(ctx)')
+  const iMount = applyBody.indexOf('mountSidebarPanel(ctx)')
   check('registerLocale 调用存在', iRegister > 0, true)
-  check('registerLocale 早于 boot（浮动按钮的首次文案就跟着 dsh）',
-    iRegister > 0 && iBoot > 0 && iRegister < iBoot, true)
-  check('registerLocale 早于 mountSettingsEntry（设置页导航项同理）',
+  // 浮动按钮与设置页入口均已按主人裁决移除 —— 首个文案消费者现在是侧边栏面板。
+  check('registerLocale 早于 mountSidebarPanel（唯一入口的首次文案同理）',
     iRegister > 0 && iMount > 0 && iRegister < iMount, true)
 
   check('两个语言来源都订阅：watchLang（HTML 属性）',

@@ -14,7 +14,7 @@
  *
  * 运行： node tests/contract.test.mjs
  */
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, unlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -253,6 +253,130 @@ try {
     await handler(makeReq(path, { method, headers: { [GUARD_HEADER]: '' } }), res)
     check(`  ${path} 缺护栏头 → 403`, res.status, 403)
     void noHeader
+  }
+  console.log('\n【3b】file.limitBytes 必须跟随 preset 声明的 maxBytes（不再恒 65536）')
+  // 存在理由：readStateAt 只能给官方默认 65536，而 client 页脚尺寸标签拿 file.limitBytes
+  // 判「超渲染预算」—— preset 声明了别的上限时，阈值就是错的（budget.limit 才是真值）。
+  // 造一个声明 maxBytes=12345 的用户 preset，验证 /state 与 /file 的 file 都带上真值。
+  {
+    writeFileSync(join(HOME, 'settings.yaml'), 'agent-presets:\n  default: maxi\n')
+    mkdirSync(join(HOME, '.agent-presets', 'maxi'), { recursive: true })
+    writeFileSync(
+      join(HOME, '.agent-presets', 'maxi', 'agent.cordis.yml'),
+      '- id: agent-instructions\n  maxBytes: 12345\n',
+    )
+    const state = await call('/api/dsh-agent/state', { query: q(SUB) })
+    check('GET /state（带用户 preset）→ 200', state.status, 200)
+    check('budget.limit 来自 preset 声明（12345）', state.body.budget.limit, 12345)
+    check('state.file.limitBytes 跟随 preset 声明', state.body.file.limitBytes, 12345)
+
+    const save = await call('/api/dsh-agent/file', {
+      method: 'PUT',
+      body: { cwd: SUB, target: join(SUB, 'AGENTS.md'), content: '# limit probe\n' },
+    })
+    check('PUT /file 响应的 file.limitBytes 同样跟随', save.body.file.limitBytes, 12345)
+
+    // 还原：删掉 settings.yaml 与用户 preset，后续分组仍按「无 preset 配置」的环境断言
+    unlinkSync(join(HOME, 'settings.yaml'))
+    rmSync(join(HOME, '.agent-presets'), { recursive: true, force: true })
+  }
+
+  console.log('\n【3c】写入面盲区：创建、暂停态编辑、白名单边界')
+  // 这些分支此前只有 fuzz/语义测试间接覆盖或干脆没覆盖 —— 这里端到端补齐。
+  {
+    // ① 写一个尚不存在的层 = 创建（新建入口的完整闭环）
+    const create = await call('/api/dsh-agent/file', {
+      method: 'PUT',
+      body: { cwd: SUB, target: join(REPO, 'CLAUDE.md'), content: '# claude 由测试创建\n' },
+    })
+    check('PUT /file 到尚不存在的层 → 200 并创建', create.status, 200)
+    check('  磁盘上确实出现该文件', existsSync(join(REPO, 'CLAUDE.md')), true)
+    check('  响应如实报告 exists', create.body.file.exists, true)
+
+    // ② 暂停态仍可编辑（「先改好内容、再启用」的正常流程）
+    await call('/api/dsh-agent/activation', { method: 'PUT', body: { cwd: SUB, globalEnabled: false } })
+    check('  前置：全局已改名 .disabled', existsSync(join(HOME, 'AGENTS.md.disabled')), true)
+    const pausedEdit = await call('/api/dsh-agent/file', {
+      method: 'PUT',
+      body: { cwd: SUB, target: join(HOME, 'AGENTS.md.disabled'), content: '# 全局（暂停态下改写）\n' },
+    })
+    check('PUT /file 到 .disabled 目标 → 200（暂停态可编辑是刻意设计）', pausedEdit.status, 200)
+    check('  内容写进 .disabled 文件', readFileSync(join(HOME, 'AGENTS.md.disabled'), 'utf8'), '# 全局（暂停态下改写）\n')
+    await call('/api/dsh-agent/activation', { method: 'PUT', body: { cwd: SUB, globalEnabled: true } })
+    check('  恢复启用后内容还在', readFileSync(join(HOME, 'AGENTS.md'), 'utf8'), '# 全局（暂停态下改写）\n')
+
+    // ③ /layers 的 base 不接受 .disabled 形态（.disabled 由 base 推导，防绕过候选名约束）
+    const pausedBase = await call('/api/dsh-agent/layers', {
+      method: 'PUT',
+      body: { cwd: SUB, changes: [{ base: join(HOME, 'AGENTS.md.disabled'), enabled: true }] },
+    })
+    check('PUT /layers + base=.disabled → 403', pausedBase.status, 403)
+
+    // ④ 非法 mode → 400
+    const badMode = await call('/api/dsh-agent/layers', { method: 'PUT', body: { cwd: SUB, mode: 'bogus' } })
+    check('PUT /layers + 未知 mode → 400', badMode.status, 400)
+
+    // ⑤ 超过 64 层的批量改名 → 400
+    const tooMany = await call('/api/dsh-agent/layers', {
+      method: 'PUT',
+      body: { cwd: SUB, changes: Array.from({ length: 65 }, () => ({ base: join(REPO, 'AGENTS.md'), enabled: true })) },
+    })
+    check('PUT /layers + 65 项 → 400', tooMany.status, 400)
+  }
+
+  console.log('\n【3d】方法、来源与边界（护栏分支的端到端核对）')
+  {
+    // ① 读路由收到写方法 → 405（护栏先过，再拒方法）
+    const wrongMethod = await call('/api/dsh-agent/file', { method: 'GET' })
+    check('GET /file → 405（方法不允许）', wrongMethod.status, 405)
+
+    // ② 跨站 Origin → 403（同源栅栏；命名路由绕过令牌栅栏，这道检查是唯一跨站防线）
+    const evilOrigin = await call('/api/dsh-agent/state', {
+      query: q(SUB),
+      headers: { origin: 'https://evil.example' },
+    })
+    check('GET /state + 恶意 Origin → 403', evilOrigin.status, 403)
+
+    // ③ 无预检的跨站简单请求（text/plain 夹 JSON）→ 415
+    const plainCt = await call('/api/dsh-agent/file', {
+      method: 'PUT',
+      body: { cwd: SUB, target: join(SUB, 'AGENTS.md'), content: '# x\n' },
+      headers: { 'content-type': 'text/plain' },
+    })
+    check('PUT /file + text/plain → 415', plainCt.status, 415)
+
+    // ④ 想暂停全局、但两个形态都不存在 → 404（明确报错，不静默"成功"）
+    const globalActive = join(HOME, 'AGENTS.md')
+    const globalPaused = join(HOME, 'AGENTS.md.disabled')
+    const keepActive = readFileSync(globalActive)
+    const keepPaused = existsSync(globalPaused) ? readFileSync(globalPaused) : null
+    rmSync(globalActive)
+    if (keepPaused) rmSync(globalPaused)
+    const nothingToPause = await call('/api/dsh-agent/activation', {
+      method: 'PUT',
+      body: { cwd: SUB, globalEnabled: false },
+    })
+    check('PUT /activation 暂停不存在的全局文件 → 404', nothingToPause.status, 404)
+    // 恢复 fixture
+    writeFileSync(globalActive, keepActive)
+    if (keepPaused) writeFileSync(globalPaused, keepPaused)
+
+    // ⑤ cwd 是盘符根 → 400（拒绝把整个盘当工作区；非 Windows 无盘符概念，回落 200）
+    const rootCwd = await call('/api/dsh-agent/state', { query: '?cwd=' + encodeURIComponent('C:\\') })
+    check('GET /state + 盘符根 cwd → 400（win32）', rootCwd.status, process.platform === 'win32' ? 400 : 200)
+
+    // ⑥ 单文件上限的边界：恰好 1 MB 必须放行（只有"超过"才拦）
+    const boundary = await call('/api/dsh-agent/file', {
+      method: 'PUT',
+      body: { cwd: SUB, target: join(SUB, 'AGENTS.md'), content: 'x'.repeat(1048576) },
+    })
+    check('PUT /file + 恰好 1 MB → 200（边界内放行）', boundary.status, 200)
+    check('  磁盘字节数正确', readFileSync(join(SUB, 'AGENTS.md')).length, 1048576)
+    // 还原成小内容，避免影响后续分组
+    await call('/api/dsh-agent/file', {
+      method: 'PUT',
+      body: { cwd: SUB, target: join(SUB, 'AGENTS.md'), content: '# sub edited\n' },
+    })
   }
 } finally {
   rmSync(root, { recursive: true, force: true })
