@@ -18,10 +18,13 @@
 | 4 | client bundle | ✅ `exports.apply` + `exports.inject` + `return module.exports` 与官方产物**逐字一致**；`package.json` 声明了 `dsh.client` 就必须导出 `"./client"`（否则官方报错） |
 | 5 | **鉴权** | ❌ **命名路由天然绕过 dsh 的令牌栅栏**（`match()` 中 exact 命中即返回，而鉴权由 fallback 的 SPA 承担）。实测：`GET /` → 401，而 `GET /api/dsh-agent/state` 无令牌 → **200**。⇒ 本插件自带栅栏（见下） |
 | 6 | **指令发现链** | ❌ 官方是「`.git` 项目根 + 逐层目录 + 4 个候选名 + 同目录 trimmed 去重」，只数两个文件会**严重低报**。实测某仓库：真实 **52,892** 字节 vs 只数两份的 35,701 字节 |
-| 7 | **配置平面** | ❌ `agent-instructions` 的**生效实例在 preset 平面**（`presets/<id>/agent.cordis.yml`）；web-app bundle 把 host 平面那份设为 `disabled: true`，**两平面不合并 config** ⇒ 在 host 平面写 config 覆盖**无效** |
-| 8 | 上限来源 | ✅ 上限值可只读获得：`settings.yaml` 的 `agent-presets.default` → 该 preset 的 `maxBytes`。**`minimal` preset 未声明该行 ⇒ AGENTS.md 完全不加载** |
+| 7 | **配置平面** | ❌ **dsh 44.7.0 已改**：`agent-instructions` 的预算从 preset 平面（旧版 `presets/<id>/agent.cordis.yml`）整体迁到**宿主组合行**——`dsh-base` bundle patch 直接声明 `maxBytes: 65536`，profile patch 可覆盖（last-write-wins），`maxBytes` 为 required 且 `≤ 0` = 禁用预算。v0.5.0 起插件按新事实源读取 |
+| 8 | 上限来源 | ✅ **v0.5.0 换轨**：profile `cordis.patch.yml` 里 `id: agent-instructions` 行的 `maxBytes` 覆盖 → 官方默认 65536。旧 `settings.yaml` / `.agent-presets` 链已失效并删除。`maxBytes ≤ 0` ⇒ 预算禁用，界面如实说明 |
 | 9 | **可写范围** | ✅ 官方候选名是**闭集**（`config.ts:11-13` 共 4 个）⇒ 给文件名加 `.disabled` 后缀即可让发现链「探测不到它」，这就是「暂停」的**全部**机制，不用改任何源码。反过来，可写入口按「候选闭集 × 祖先链 × {原名, `.disabled`}」**全量枚举做白名单**，链外路径一律拒绝 |
 | 10 | 同目录多候选 | ❌ 同目录里 `AGENTS.md` 与 `CLAUDE.md` **都会加载**（只有 trimmed 内容相同的才去重）。实测某仓库两文件并存 ⇒ 发现链 3 项、合计 52,892 字节；任何"一层只显示一个文件"的折叠都会低报并让第二份失去编辑入口 |
+| 11 | **双全局根** | ❌ **dsh 44.7.0 新增**：`userGlobalRoots` 除 `~/.dsh` 外还扫 **`~/.agents/AGENTS.md`**（`DSH_AGENTS_HOME` > `~/.agents`），两个全局根同属一个去重组（dsh 层先发现保留）。v0.5.1 起插件列出 agents 层并按同组去重 |
+| 12 | **locale 契约** | ✅ **v0.5.0 对齐官方**：slot 条目声明 `locale: NS`（renderer 的 `localeSeat` 据此注入官方 `t`）+ `ctx.locale.bind(NS)` 权威通道；占位符统一官方 `{name}` params 模板（dsh-client-locale 的 `translate` 契约），本地字典仅回落 |
+| 13 | **CSS 注入** | ✅ **v0.5.0 对齐官方**：`<style data-plugin data-plugin-css='包名/文件'>` 去重标记，与官方 client-ui-* 包共存语义一致 |
 
 ---
 
@@ -125,12 +128,15 @@ Host 代码**只在宿主（桌面端应用）启动时装载** —— 改了不
 
 > ⚠️ 口径说明：这里是**文件字节合计**，不含官方渲染时的分段标题/标记行，故为近似值（真实占用会略高几十字节／文件）。
 
-### preset 平面（只读，绝不写入）
+### 指令预算来源（v0.5.0 起换轨，只读，绝不写入）
 
-- 从 `$DSH_HOME/settings.yaml` 逐行解析 `agent-presets.default`（不依赖 YAML 库）
-- 用户 preset（`$DSH_HOME/.agent-presets/<id>/`）**优先于**官方 shipped preset
-- 从 `agent.cordis.yml` 中提取 `agent-instructions` 行的 `maxBytes`；**行不存在或 `disabled: true` ⇒ 判定该 preset 不加载指令**，预算不适用
-- harness 根由 `process.argv[1]` 上溯探测；探测失败一律回落官方默认 65536
+- **新事实源**（dsh 44.7.0）：profile `cordis.patch.yml` 里 `id: agent-instructions` 行的
+  `config.maxBytes`（组合语义 last-write-wins，用户覆盖即最终值）→ 官方默认 65536
+  （dsh-base patch 声明值；bundle patch 都封装在应用 asar 内运行时不可读，故内置为常量对齐）
+- `maxBytes ≤ 0` 或行 `disabled: true` ⇒ **预算禁用**（官方 `isDisabledBudget`：全部文件进 omitted）
+- 旧的 preset 链（`settings.yaml` 的 `agent-presets.default` → `.agent-presets/<id>/agent.cordis.yml`）
+  在新版已失效，**已删除**——留着只会读出误导性的「成功」
+- harness 根探测（`process.argv[1]` 上溯找 preset 目录）随旧链一并删除
 
 ### 层开关与三种生效范围（`/api/dsh-agent/layers`）
 
@@ -138,7 +144,7 @@ Host 代码**只在宿主（桌面端应用）启动时装载** —— 改了不
 
 - 官方候选名是闭集（`config.ts:11-13`）⇒ 改名后**发现链探测不到它**，等价「不导入对话」
 - **内容一个字节不丢**，改回原名即完全恢复
-- 与 preset 平面无关，**对所有平面同时生效**（这正是选改名而非改配置的原因）
+- 与配置平面无关，**对所有平面同时生效**（这正是选改名而非改配置的原因）
 
 界面上是**三种生效范围**（一次改多层）+ 每一行自己的开关（同一套机制的细粒度）：
 
@@ -344,21 +350,21 @@ v0.4.18 起也按主人裁决**一并移除**（"设置里面的这个插件入�
 ## 单测与静态审计
 
 ```sh
-node tests/official-semantics.test.mjs   # 语义 + 改名往返单测（Windows 上 94 项）
+node tests/official-semantics.test.mjs   # 语义 + 改名往返单测（Windows 上 100 项）
 node tests/lang-resolution.test.mjs      # 界面语言来源优先级 + 接线不变量（26 项）
-node tests/contract.test.mjs             # 接口契约（真实调用 + 字段双向差分 + 语言头跟随，68 项）
+node tests/contract.test.mjs             # 接口契约（真实调用 + 字段双向差分 + 语言头跟随，76 项）
 node tests/audit-bundle.mjs              # 死代码 / 文案键双向 / Host·Client 文案表 / CSS 模板串静态审计
-node tests/fuzz-local.mjs                # 随机化测试（固定种子，18 组性质，2873 断言）
+node tests/fuzz-local.mjs                # 随机化测试（固定种子，18 组性质，2851 断言）
 ```
 
-**语义单测**拿**真实的官方文件**（四个 preset 的 `agent.cordis.yml`、你的 `settings.yaml`、真实仓库的 `.git`）
-验证：settings 解析、preset 行解析（含 `minimal` 不加载分支）、项目根识别与目录链顺序、
-预算裁剪模拟、超单文件上限的忽略处理、同源栅栏判定、入口护栏（含护栏头与 content-type）。
+**语义单测**验证：组合行 `maxBytes` 解析（新版事实源，含 `disabled`/负数/required 缺失分支）、
+项目根识别与目录链顺序、预算裁剪模拟、超单文件上限的忽略处理、同源栅栏判定、
+入口护栏（含护栏头与 content-type）、链内白名单（含 agents-global 第二全局根）。
 
 其中 **4 组（`【7】`–`【10】`）在临时目录里跑真实的 `rename`** —— 这条路径会真的动磁盘上的文件，
 端到端测它就得在用户真实仓库里动手，所以用 `mkdtemp` 造同构 fixture 来验证：
 链内白名单（含 6 类链外路径必须拒绝）、层清单与模式推导、暂停/恢复往返（内容逐字节一致 + 幂等）、
-同目录多候选与去重。当前 **94 项全通过**（Windows；部分用例按平台条件断言，其它平台数目略有增减）。
+同目录多候选与去重。当前 **100 项全通过**（Windows；部分用例按平台条件断言，其它平台数目略有增减）。
 
 **接口契约测试**（`contract.test.mjs`）解决的是另一类问题：手写 bundle 没有类型检查，
 host 改了响应字段、client 忘了跟进，运行时只会得到一个 `undefined` —— 而 `undefined` 在 JSX 里

@@ -48,7 +48,7 @@
 
 | 类别 | 具体范围 |
 |---|---|
-| **读** | ① 指令链上的候选文件（`AGENTS.md` / `CLAUDE.md` / `AGENTS.local.md` / `CLAUDE.local.md` 及其 `.disabled` 变体）<br>② `settings.yaml` —— **只读** `agent-presets.default` 一个字段（取 preset 名）<br>③ 该 preset 的 `agent.cordis.yml` —— **只读** `maxBytes`（渲染预算上限）<br>④ `.git` —— 仅作为"项目根"的**存在性标记**探测，**不读其内容** |
+| **读** | ① 指令链上的候选文件（`AGENTS.md` / `CLAUDE.md` / `AGENTS.local.md` / `CLAUDE.local.md` 及其 `.disabled` 变体；全局层含 `~/.dsh` 与 `~/.agents` 两个根）<br>② profile `cordis.patch.yml` —— **只读** `id: agent-instructions` 行的 `maxBytes`（渲染预算上限，可选覆盖）<br>③ `.git` —— 仅作为"项目根"的**存在性标记**探测，**不读其内容** |
 | **写** | **仅限指令链白名单内的文件**：`AGENTS.md` / `AGENTS.local.md` 及其 `.disabled` 变体。<br>落盘走**原子写**（同目录临时文件 + `rename`，中途崩溃不会截断原文件）；写入前会弹确认框 |
 | **改名** | 同上白名单 —— 「暂停/恢复」靠**加/去 `.disabled` 后缀**实现，**内容一个字节不删** |
 | **网络** | **零外部请求**。不发任何出站连接；也不向任何第三方上报数据 |
@@ -80,11 +80,14 @@
 | 层级 | 路径 | 生效范围 | 本插件入口 |
 |---|---|---|---|
 | **用户全局** | `<DSH_HOME>/AGENTS.md`（默认 `~/.dsh/AGENTS.md`） | 该用户**所有工作区** | 列表第 1 行 —— 点它即编辑，右侧开关即暂停/启用 |
+| **agents 全局（v0.5.1 新增适配）** | `~/.agents/AGENTS.md`（解析 `DSH_AGENTS_HOME` 环境变量 > `~/.agents`） | 同上，所有工作区；与 dsh 全局同属**同一去重组**（同内容只加载 dsh 层那份） | 存在时出现在全局行之下 —— 点它即编辑，开关即暂停/启用；不存在不占位（官方 absent 即跳过） |
 | **项目级** | `<工作区>/AGENTS.md` 等 4 个候选名，逐层 | 该工作区（含更深层） | 列表其余每一层 —— **每行一个编辑入口 + 一个开关** |
 | **个性化（本地叠加）** | `<工作区>/AGENTS.local.md` | 该工作区；在 `AGENTS.md` **之后**加载 ⇒ **优先级更高**；**仅全局模式下不可用** | 工作区那层的**额外一行「个性化规则」** —— 不存在也显示，点它写入即创建；编辑器给的是「我的偏好 + 补充约定」预设；通常不进版本控制 |
 
-- 顺序：**从宽泛到具体**（全局 → 项目根 → … → 会话工作目录）
-- 预算：合计上限由 preset 声明（官方默认 **65536 字节**）；超出时**宽泛的先被省略**
+- 顺序：**从宽泛到具体**（全局 → agents 全局 → 项目根 → … → 会话工作目录）
+- 预算：合计上限由**宿主组合行**声明（dsh 44.7.0 的 dsh-base patch 默认 **65536 字节**；
+  可在 profile patch 里用 `id: agent-instructions` 行的 `maxBytes` 覆盖，`maxBytes ≤ 0` 表示
+  **禁用预算**——一个文件都不注入）；超出时**宽泛的先被省略**
 - 项目根靠 `.git` 识别；`AGENTS.local.md` / `CLAUDE.local.md` 是本地叠加层
 - ⚠️ **本地叠加层只在项目 scope 存在，全局 scope 没有**（官方 `agent-instructions/README.zh.md` 原文：
   "项目 scope 默认加载 … overlay，但用户全局 `$DSH_HOME` scope 没有本地 overlay"）。代码上
