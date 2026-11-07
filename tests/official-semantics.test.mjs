@@ -234,6 +234,8 @@ const mark = (file) => (existsSync(file) ? readFileSync(file, 'utf8') : null)
 
 const fixtureRoot = mkdtempSync(join(tmpdir(), 'dsh-agent-semantics-'))
 const FIX_HOME = join(fixtureRoot, 'home')
+/** resolveAgentsHome 在测试进程里读真实用户目录（fixture 不接管 DSH_AGENTS_HOME）。 */
+const envHome = () => process.env.DSH_AGENTS_HOME ? resolve(process.env.DSH_AGENTS_HOME) : join(process.env.USERPROFILE ?? '', '.agents')
 const FIX_REPO = join(fixtureRoot, 'repo')
 const FIX_SUB = join(FIX_REPO, 'sub')
 const FIX_OUTSIDE = join(fixtureRoot, 'outside.md')
@@ -260,7 +262,10 @@ try {
     const allowed = await buildAllowedTargets(FIX_SUB, FIX_HOME)
     const reachable = (file) => allowed.has(pathKey(resolve(file)))
 
-    check('规模 = 全局 2 种形态 + 链长 2 × 4 候选 × 2 形态', allowed.size, 2 + 2 * 4 * 2)
+    // v0.5.1：agents-global 第二全局根（~/.agents/AGENTS.md）两种形态也入白名单
+    check('规模 = 全局 2×2 种形态（dsh+agents）+ 链长 2 × 4 候选 × 2 形态', allowed.size, 4 + 2 * 4 * 2)
+    check('agents 层 AGENTS.md 可写（第二全局根）', reachable(join(envHome(), 'AGENTS.md')), true)
+    check('agents 层 .disabled 可写', reachable(join(envHome(), 'AGENTS.md.disabled')), true)
 
     check('全局 AGENTS.md 可写', reachable(join(FIX_HOME, 'AGENTS.md')), true)
     check('全局 .disabled 可写（否则暂停后就再也改不回来）', reachable(join(FIX_HOME, 'AGENTS.md.disabled')), true)
