@@ -17,8 +17,7 @@ import { __test } from '../lib/index.js'
 import { resolve, sep } from 'node:path'
 
 const {
-  parsePresetDefault,
-  parseAgentInstructionsRow,
+  parseConfiguredMaxBytes,
   summarizeBudget,
   ancestorChain,
   isLocalOrigin,
@@ -124,31 +123,29 @@ for (let i = 0; i < ITER; i += 1) {
   }
 }
 
-/* ── 3. 两个解析器：任意输入不抛 + 类型正确 ── */
+/* ── 3. 组合行解析器：任意输入不抛 + 类型正确 ── */
 const samples = [
-  '', '   ', '\n\n', 'agent-presets:\n  default: cordis\n', 'agent-presets:\r\n  default: ptc\r\n',
-  'agent-presets:\n\tdefault: tabs\n', 'agent-presets:\n  default: "quoted"\n', "agent-presets:\n  default: 'single'\n",
-  'agent-presets:\n  default: 123\n', 'agent-presets:\n  default:\n', 'agent-presets:\n  default: a:b:c\n',
-  'permission:\n  defaultPreset: x\n', 'agent-presets:\n  other: y\n', '# c\nagent-presets:\n  default: ok\n',
-  'agent-presets:\n  - id: agent-instructions\n    maxBytes: 65536\n', 'agent-presets:\n  - id: other\n',
-  'a'.repeat(5000), 'agent-presets:\n  default: ' + 'x'.repeat(3000) + '\n',
+  '', '   ', '\n\n',
+  '- id: agent-instructions\n  config:\n    maxBytes: 65536\n',
+  '- id: agent-instructions\r\n  config:\r\n    maxBytes: 12345\r\n',
+  '- id: agent-instructions\n\tconfig:\n\t\tmaxBytes: 1\n',
+  '- id: agent-instructions\n  config:\n    maxBytes: "quoted"\n',
+  '- id: agent-instructions\n  config:\n    maxBytes: -1\n',
+  '- id: agent-instructions\n  config:\n    maxBytes:\n',
+  '- id: agent-instructions\n  config:\n    maxBytes: a:b:c\n',
+  'permission:\n  defaultPreset: x\n', 'agent-presets:\n  other: y\n', '# c\n- id: agent-instructions\n',
+  '- id: agent-instructions\n  config:\n    maxBytes: 65536\n- id: other\n',
+  'a'.repeat(5000), '- id: agent-instructions\n  name: ' + 'x'.repeat(3000) + '\n',
   '  - id: agent-instructions\n', '- id: agent-instructions\n  maxBytes: notanumber\n',
 ]
 for (const raw of samples) {
   const tag = JSON.stringify(raw.slice(0, 24))
   try {
-    const d = parsePresetDefault(raw)
-    if (d !== null && typeof d !== 'string') bad('J parsePresetDefault 类型', `${tag} → ${typeof d}`)
+    const hit = parseConfiguredMaxBytes(raw)
+    if (hit === null || typeof hit !== 'object' || typeof hit.present !== 'boolean') bad('K parseConfiguredMaxBytes 类型', `${tag} → ${typeof hit}`)
     else ok()
   } catch (e) {
-    bad('J parsePresetDefault 不抛', `${tag} → ${e.message}`)
-  }
-  try {
-    const row = parseAgentInstructionsRow(raw)
-    if (row !== null && typeof row !== 'object') bad('K parseAgentInstructionsRow 类型', `${tag} → ${typeof row}`)
-    else ok()
-  } catch (e) {
-    bad('K parseAgentInstructionsRow 不抛', `${tag} → ${e.message}`)
+    bad('K parseConfiguredMaxBytes 不抛', `${tag} → ${e.message}`)
   }
 }
 

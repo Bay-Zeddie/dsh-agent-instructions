@@ -14,8 +14,7 @@ import { join, resolve } from 'node:path'
 import { __test } from '../lib/index.js'
 
 const {
-  parsePresetDefault,
-  parseAgentInstructionsRow,
+  parseConfiguredMaxBytes,
   summarizeBudget,
   findProjectRoot,
   ancestorChain,
@@ -60,46 +59,41 @@ const read = async (file) => {
   }
 }
 
-console.log('\n【1】settings.yaml 的 agent-presets.default 解析')
+console.log('\n【1】组合行 maxBytes 解析（新版事实源：profile/bundle patch 的 agent-instructions 行）')
 {
-  const raw = await read(join(DSH_HOME, 'settings.yaml'))
-  if (raw === null) {
-    console.log('  ⏭ 跳过：读不到 settings.yaml')
-  } else {
-    check('解析出 default preset', parsePresetDefault(raw), 'cordis')
-    check('顶层下一键不会误读', parsePresetDefault('permission:\n  defaultPreset: x\n'), null)
-    check('段内 default 正确取出', parsePresetDefault('agent-presets:\n  default: ptc\n'), 'ptc')
-  }
-}
-
-console.log('\n【2】preset 的 agent-instructions 行解析（对真实官方文件）')
-for (const preset of ['cordis', 'standard', 'ptc']) {
-  const raw = await read(join(PRESETS, preset, 'agent.cordis.yml'))
-  if (raw === null) {
-    console.log(`  ⏭ 跳过 ${preset}：文件不存在`)
-    continue
-  }
-  check(`${preset} 已启用且上限为官方默认`, parseAgentInstructionsRow(raw), {
-    enabled: true,
-    maxBytes: DEFAULT_MAX_BYTES,
+  // v0.5.0 适配：官方已把预算从 preset 平面迁到组合行（dsh-base patch 直接声明，
+  // 用户 profile patch 可覆盖）。旧 settings.yaml / preset 目录读取链已删。
+  check('组合行解析出 maxBytes', parseConfiguredMaxBytes('- id: agent-instructions\n  name: \'@deepseek-ai/dsh-agent-instructions\'\n  config:\n    maxBytes: 65536\n'), {
+    present: true,
+    disabled: false,
+    maxBytes: 65536,
+  })
+  check('负数 maxBytes 原样带出（<=0 = 新版「禁用预算」语义，由调用方判定）', parseConfiguredMaxBytes('- id: agent-instructions\n  config:\n    maxBytes: 0\n'), {
+    present: true,
+    disabled: false,
+    maxBytes: 0,
+  })
+  check('disabled: true 视为禁用', parseConfiguredMaxBytes('- id: agent-instructions\n  config:\n    maxBytes: 1\n  disabled: true\n'), {
+    present: true,
+    disabled: true,
+    maxBytes: null,
+  })
+  check('行不存在时 present=false', parseConfiguredMaxBytes('- id: other\n  config:\n    maxBytes: 8\n'), {
+    present: false,
+    disabled: false,
+    maxBytes: null,
+  })
+  check('行在但未写 maxBytes（required 缺失）', parseConfiguredMaxBytes('- id: agent-instructions\n  name: \'@deepseek-ai/dsh-agent-instructions\'\n'), {
+    present: true,
+    disabled: false,
+    maxBytes: null,
+  })
+  check('下一行是别的 entry 时停止扫描', parseConfiguredMaxBytes('- id: agent-instructions\n  name: a\n- id: next\n  config:\n    maxBytes: 9\n'), {
+    present: true,
+    disabled: false,
+    maxBytes: null,
   })
 }
-{
-  const raw = await read(join(PRESETS, 'minimal', 'agent.cordis.yml'))
-  if (raw === null) {
-    console.log('  ⏭ 跳过 minimal：文件不存在')
-  } else {
-    check('minimal 未声明 ⇒ 不加载指令', parseAgentInstructionsRow(raw), { enabled: false, maxBytes: null })
-  }
-}
-check('disabled: true 视为未启用', parseAgentInstructionsRow('- id: agent-instructions\n  config:\n    maxBytes: 1\n  disabled: true\n'), {
-  enabled: false,
-  maxBytes: 1,
-})
-check('行不存在时返回未启用', parseAgentInstructionsRow('- id: other\n  config:\n    maxBytes: 8\n'), {
-  enabled: false,
-  maxBytes: null,
-})
 
 console.log('\n【3】项目根识别与目录链顺序（宽泛 → 具体）')
 if (!existsSync(HARNESS_ROOT)) {

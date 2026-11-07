@@ -254,21 +254,21 @@ try {
     check(`  ${path} 缺护栏头 → 403`, res.status, 403)
     void noHeader
   }
-  console.log('\n【3b】file.limitBytes 必须跟随 preset 声明的 maxBytes（不再恒 65536）')
+  console.log('\n【3b】file.limitBytes 必须跟随 profile patch 覆盖的 maxBytes（不再恒 65536）')
   // 存在理由：readStateAt 只能给官方默认 65536，而 client 页脚尺寸标签拿 file.limitBytes
-  // 判「超渲染预算」—— preset 声明了别的上限时，阈值就是错的（budget.limit 才是真值）。
-  // 造一个声明 maxBytes=12345 的用户 preset，验证 /state 与 /file 的 file 都带上真值。
+  // 判「超渲染预算」——组合声明了别的上限时，阈值就是错的（budget.limit 才是真值）。
+  // v0.5.0 适配：新版 dsh 把预算从 preset 平面迁到组合行（dsh-base patch 声明，
+  // 用户 profile patch 的 id: agent-instructions 行可覆盖，last-write-wins）。
+  // 造一个声明 maxBytes=12345 的 profile patch 覆盖，验证 /state 与 /file 都带上真值。
   {
-    writeFileSync(join(HOME, 'settings.yaml'), 'agent-presets:\n  default: maxi\n')
-    mkdirSync(join(HOME, '.agent-presets', 'maxi'), { recursive: true })
-    writeFileSync(
-      join(HOME, '.agent-presets', 'maxi', 'agent.cordis.yml'),
-      '- id: agent-instructions\n  maxBytes: 12345\n',
-    )
+    // 测试的 HOME 是临时目录：resolveInstructionConfig 读 $DSH_HOME/profiles/desktop/cordis.patch.yml
+    const patchDir = join(HOME, 'profiles', 'desktop')
+    mkdirSync(patchDir, { recursive: true })
+    writeFileSync(join(patchDir, 'cordis.patch.yml'), '- id: agent-instructions\n  name: x\n  config:\n    maxBytes: 12345\n')
     const state = await call('/api/dsh-agent/state', { query: q(SUB) })
-    check('GET /state（带用户 preset）→ 200', state.status, 200)
-    check('budget.limit 来自 preset 声明（12345）', state.body.budget.limit, 12345)
-    check('state.file.limitBytes 跟随 preset 声明', state.body.file.limitBytes, 12345)
+    check('GET /state（带 profile 覆盖）→ 200', state.status, 200)
+    check('budget.limit 来自 profile 覆盖（12345）', state.body.budget.limit, 12345)
+    check('state.file.limitBytes 跟随 profile 覆盖', state.body.file.limitBytes, 12345)
 
     const save = await call('/api/dsh-agent/file', {
       method: 'PUT',
@@ -276,9 +276,13 @@ try {
     })
     check('PUT /file 响应的 file.limitBytes 同样跟随', save.body.file.limitBytes, 12345)
 
-    // 还原：删掉 settings.yaml 与用户 preset，后续分组仍按「无 preset 配置」的环境断言
-    unlinkSync(join(HOME, 'settings.yaml'))
-    rmSync(join(HOME, '.agent-presets'), { recursive: true, force: true })
+    // 新版官方语义：maxBytes <= 0 = 禁用预算（isDisabledBudget）
+    writeFileSync(join(patchDir, 'cordis.patch.yml'), '- id: agent-instructions\n  name: x\n  config:\n    maxBytes: 0\n')
+    const disabled = await call('/api/dsh-agent/state', { query: q(SUB) })
+    check('maxBytes: 0 ⇒ instructionsEnabled=false（新版禁用语义）', disabled.body.budget.instructionsEnabled, false)
+
+    // 还原：删掉 patch 覆盖，后续分组仍按「无覆盖」的环境断言
+    rmSync(join(HOME, 'profiles'), { recursive: true, force: true })
   }
 
   console.log('\n【3c】写入面盲区：创建、暂停态编辑、白名单边界')
