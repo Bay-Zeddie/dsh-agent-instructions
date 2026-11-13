@@ -148,6 +148,27 @@ try {
 }
 check('全部 disposer 可安全调用（卸载不炸）', disposeThrew, false)
 
+console.log('\n【5】样式注入：热重载后必须更新内容（不能「已存在就跳过」）')
+{
+  // 缺陷复盘：ensureStyles 曾经是「查到 style 就 return」，于是 client 模块 HMR 重载后
+  // CSS 永远停在旧版本 —— 实测把磨砂统一成皮肤值之后，面板仍跑 blur(40px)，只有整页刷新才变。
+  check('已存在时比对并更新 textContent', /existing\.textContent\s*!==\s*css/.test(src), true)
+  check('没有「查到 style 就直接 return」的早退', /if \(document\.querySelector\('style\[data-plugin-css/.test(src), false)
+}
+
+console.log('\n【6】磨砂配方只有一个来源（与 dsh-sunfragment-skin 的统一值一致）')
+{
+  const LITERAL = 'blur(10px) saturate(160%) brightness(.82)'
+  check('配方字面量只在 --dsh-agent-glass 定义处出现一次', src.split(LITERAL).length - 1, 1)
+  check('令牌链顺序：皮肤令牌 → 官方令牌 → 字面量兜底'
+    , /--dsh-agent-glass:var\(--dts-glass-blur,var\(--dsw-menu-backdrop-filter,blur\(10px\)/.test(src), true)
+  check('所有 backdrop-filter 位点都读变量（无第二份字面量）', (src.match(/backdrop-filter:(?!var\(--dsh-agent-glass\))/g) || []).length, 0)
+  const std = (src.match(/(?<!-webkit-)backdrop-filter:var\(--dsh-agent-glass\)/g) || []).length
+  const webkit = (src.match(/-webkit-backdrop-filter:var\(--dsh-agent-glass\)/g) || []).length
+  check('-webkit- 前缀与标准属性逐处成对', webkit, std)
+  check('磨砂位点数量（7 处：编辑器/页脚/列表/预算/诊断/说明/对话框）', std, 7)
+}
+
 /* ---------------------------------------------------------------- 工具 */
 
 function safeCall(fn) {

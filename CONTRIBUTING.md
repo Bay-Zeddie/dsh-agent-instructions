@@ -25,6 +25,8 @@
 | 11 | **双全局根** | ❌ **dsh 44.7.0 新增**：`userGlobalRoots` 除 `~/.dsh` 外还扫 **`~/.agents/AGENTS.md`**（`DSH_AGENTS_HOME` > `~/.agents`），两个全局根同属一个去重组（dsh 层先发现保留）。v0.5.1 起插件列出 agents 层并按同组去重 |
 | 12 | **locale 契约** | ✅ **v0.5.0 对齐官方**：slot 条目声明 `locale: NS`（renderer 的 `localeSeat` 据此注入官方 `t`）+ `ctx.locale.bind(NS)` 权威通道；占位符统一官方 `{name}` params 模板（dsh-client-locale 的 `translate` 契约），本地字典仅回落 |
 | 13 | **CSS 注入** | ✅ **v0.5.0 对齐官方**：`<style data-plugin data-plugin-css='包名/文件'>` 去重标记，与官方 client-ui-* 包共存语义一致 |
+| 14 | **预算渲染器** | ❌→✅ **v0.6.0 移植官方**：官方按「user-global 链 / project 链**各自一份** `maxBytes`」渲染再合并（合并文本 ≤ 2×maxBytes），且预算是对**渲染文本**（`<system-reminder>` 边框 + intro + 每文件 `Instructions from:` 段头 + omitted marker）算的。旧实现拿「内容字节和 vs 单上限」，会在最常见的双链场景谎报「全局文件会被丢」。现逐字节对齐官方（`tests/budget-parity.test.mjs` 用官方实跑值做黄金样本） |
+| 15 | **层显示路径** | ❌→✅ **v0.6.0 对齐官方**：全局层用 `dshHomeDisplay()/agentsHomeDisplay()` 的口径（`~/.dsh`、`~/.agents`；被 `DSH_HOME`/`DSH_AGENTS_HOME` 覆盖时 `$DSH_HOME`、`$DSH_AGENTS_HOME`），不再自造 `<DSH_HOME>` 占位 —— 显示串直接进渲染字节，差一个字符预算就偏 |
 
 ---
 
@@ -350,11 +352,13 @@ v0.4.18 起也按主人裁决**一并移除**（"设置里面的这个插件入�
 ## 单测与静态审计
 
 ```sh
-node tests/official-semantics.test.mjs   # 语义 + 改名往返单测（Windows 上 100 项）
+node tests/official-semantics.test.mjs   # 语义 + 改名往返单测（104 项）
+node tests/budget-parity.test.mjs        # 预算黄金样本：与官方渲染器逐字节一致 + 零文件语义（22 项，期望值取自 dsh 44.7.0 asar）
 node tests/lang-resolution.test.mjs      # 界面语言来源优先级 + 接线不变量（26 项）
 node tests/contract.test.mjs             # 接口契约（真实调用 + 字段双向差分 + 语言头跟随，76 项）
+node tests/http-e2e.test.mjs             # 真实 HTTP 端到端（真 TCP、栅栏、409/413/415/405、改名往返，52 项）
 node tests/audit-bundle.mjs              # 死代码 / 文案键双向 / Host·Client 文案表 / CSS 模板串静态审计
-node tests/fuzz-local.mjs                # 随机化测试（固定种子，18 组性质，2851 断言）
+node tests/fuzz-local.mjs                # 随机化测试（固定种子，21 组性质）
 ```
 
 **语义单测**验证：组合行 `maxBytes` 解析（新版事实源，含 `disabled`/负数/required 缺失分支）、

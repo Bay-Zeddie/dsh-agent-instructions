@@ -5,11 +5,15 @@
  *   - 那个是「拿真实官方文件验语义」（具体值）；
  *   - 这个是「随机输入验性质」（不变量）—— 专找边界与组合。
  *
- * ⚠️ 断言结构**已逐条对照 lib/index.js 的 summarizeBudget 源码核对**：
- *   - r.layers      = **全部**层（含被忽略者），带 { path, displayPath, bytes, mtime, layer, ignored }
- *   - r.omitted     = 被丢弃的最宽泛前缀，条目只有 { displayPath, bytes, layer }（**没有 path**）
- *   - r.notRendered = 超单文件上限的层，条目同样只有 { displayPath, bytes, layer }
- *   - 裁剪保证至少保留一层（omittedCount 最多为 kept.length - 1，即"最具体那份即使超限也保留并截断"）
+ * ⚠️ 断言结构**已逐条对照 lib/index.js 的 summarizeBudget 源码核对**（v0.6.0 双链语义）：
+ *   - r.layers       = **全部**层（含被忽略者），带 { path, displayPath, bytes, layer, ignored }
+ *   - r.omitted      = 被丢弃的层，条目为 { path, displayPath, bytes, layer }；**不再是**
+ *                      「全链最宽泛前缀」—— 官方按「全局链 / 项目链」各自裁剪，
+ *                      两条链的省略集合拼起来只是 kept 的一个**子序列**。
+ *   - r.truncated    = 被截断的层，条目为 { displayPath, originalBytes, includedBytes }，每条链最多一份
+ *   - r.renderedBytes= 官方口径的真实注入文本字节（含边框/intro/段头/marker）
+ *   - r.over         = 「确实有内容进不去」= omitted 或 truncated 非空（**不是**内容合计 > limit）
+ *   - 裁剪保证每条链至少保留一份（最后一层即使超限也保留并截断）
  *
  * 固定种子，失败可复现。运行： node tests/fuzz-local.mjs [迭代数]
  */
@@ -76,7 +80,9 @@ for (let i = 0; i < ITER; i += 1) {
 
   if (r.totalBytes !== sumKept) bad('A totalBytes=可读层之和', `${tag} got=${r.totalBytes} want=${sumKept}`)
   else if (r.limit !== limit) bad('A limit 原样返回', tag)
-  else if (r.over !== (sumKept > limit)) bad('A over 判定', `${tag} total=${sumKept}`)
+  else if (typeof r.renderedBytes !== 'number' || !Number.isFinite(r.renderedBytes) || r.renderedBytes < 0) bad('A renderedBytes 是非负有限数', `${tag} got=${r.renderedBytes}`)
+  else if (!r.chains || r.chains.global.bytes + r.chains.project.bytes !== sumKept) bad('A 两链内容合计=可读层之和', `${tag} got=${r.chains && (r.chains.global.bytes + r.chains.project.bytes)} want=${sumKept}`)
+  else if (r.over !== ((r.omitted ?? []).length > 0 || (r.truncated ?? []).length > 0)) bad('A over=真的有内容进不去', `${tag} over=${r.over}`)
   else ok()
 
   if (!Array.isArray(r.layers) || r.layers.length !== layers.length) bad('B layers 回报全部层', `${tag} got=${r.layers && r.layers.length}`)
@@ -86,10 +92,29 @@ for (let i = 0; i < ITER; i += 1) {
   if (notRenderedNames.join('|') !== tooBig.map((l) => l.displayPath).join('|')) bad('C notRendered=超限层', `${tag} got=${notRenderedNames}`)
   else ok()
 
-  if (!r.over && omittedNames.length > 0) bad('D 未超限却省略', tag)
+  if (!r.over && (omittedNames.length > 0 || (r.truncated ?? []).length > 0)) bad('D 未 over 却有层被丢/被截断', tag)
   else ok()
 
-  if (omittedNames.join('|') !== keptNames.slice(0, omittedNames.length).join('|')) bad('E 省略=最宽泛前缀', `${tag} kept=${keptNames} omitted=${omittedNames}`)
+  const isSubsequence = (sub, full) => {
+    let cursor = 0
+    for (const item of full) {
+      if (cursor < sub.length && item === sub[cursor]) cursor += 1
+    }
+    return cursor === sub.length
+  }
+  if (omittedNames.some((name) => !keptNames.includes(name))) bad('E omitted 只含可读层', `${tag} omitted=${omittedNames}`)
+  else if (!isSubsequence(omittedNames, keptNames)) bad('E omitted 保持发现顺序（子序列）', `${tag} kept=${keptNames} omitted=${omittedNames}`)
+  else ok()
+
+  const truncations = r.truncated ?? []
+  const truncShapeOk = truncations.every((item) => typeof item.displayPath === 'string'
+    && Number.isFinite(item.originalBytes) && Number.isFinite(item.includedBytes)
+    && item.includedBytes >= 0 && item.includedBytes <= item.originalBytes)
+  if (!truncShapeOk) bad('E2 truncated 形状合法', `${tag} got=${JSON.stringify(truncations)}`)
+  else ok()
+
+  // 官方每条链最多截断一份（最后一层），两条链 ⇒ 至多 2 项
+  if (truncations.length > 2) bad('E3 truncated ≤ 2（每链最多一份）', `${tag} got=${truncations.length}`)
   else ok()
 
   if (r.over && kept.length > 0 && omittedNames.length > kept.length - 1) bad('F 至少保留一层', `${tag} kept=${kept.length} omitted=${omittedNames.length}`)
@@ -200,7 +225,7 @@ for (const v of [undefined, null, 0, {}, []]) {
   else ok()
 }
 
-console.log(`\n随机化测试：${ITER} 轮 · 18 组性质`)
+console.log(`\n随机化测试：${ITER} 轮 · 21 组性质`)
 console.log(`断言：${pass} 通过 / ${fail} 失败\n`)
 if (fail > 0) {
   console.log('反例（种子 20260920）：')

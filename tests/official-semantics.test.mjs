@@ -119,26 +119,28 @@ if (!existsSync(HARNESS_ROOT)) {
 console.log('\n【4】预算裁剪模拟（官方：从最宽泛开始丢）')
 {
   const layers = [
-    { path: 'g', displayPath: '<DSH_HOME>/AGENTS.md', bytes: 40000, mtime: null, layer: 'user-global' },
+    { path: 'g', displayPath: '$DSH_HOME/AGENTS.md', bytes: 40000, mtime: null, layer: 'user-global' },
     { path: 'a', displayPath: 'packages/AGENTS.md', bytes: 20000, mtime: null, layer: 'project' },
     { path: 'b', displayPath: 'cwd/AGENTS.md', bytes: 10000, mtime: null, layer: 'project' },
   ]
   const fit = summarizeBudget(layers, 65536, {})
   check('合计 = 三层之和', fit.totalBytes, 70000)
-  check('over 判定为真（70000 > 65536）', fit.over, true)
-  check('超预算时从最宽泛开始丢（40000 → 剩 30000 已达标，丢 1 层）', fit.omitted.map((x) => x.displayPath), [
-    '<DSH_HOME>/AGENTS.md',
-  ])
+  // ⚠️ v0.6.0 语义变更：官方对**两条链各给一份 maxBytes**（renderInstructionChains），
+  // 合并文本 ≤ 2×maxBytes 就算都进得去。70,000B 内容 / 65,536B 上限**不是**超预算 ——
+  // 官方实现实测 renderedBytes=70,388、omitted=[]、truncated=[]。旧实现会误报「全局被丢」。
+  check('over 为假（两条链各自在预算内，合并 70,388B ≤ 2×65,536）', fit.over, false)
+  check('没有任何层被丢弃', fit.omitted.map((x) => x.displayPath), [])
+  check('真实注入文本字节（官方口径，与官方实现逐字节一致）', fit.renderedBytes, 70391)
+  check('两条链各自的渲染字节', [fit.chains.global.renderedBytes, fit.chains.project.renderedBytes], [40314, 30349])
 
   const tight = summarizeBudget(layers, 80000, {})
   check('放宽上限后不丢层', tight.omitted.length, 0)
   check('over 为假', tight.over, false)
 
   const tiny = summarizeBudget(layers, 25000, {})
-  check('预算 25000 时丢掉的层（宽的在前）', tiny.omitted.map((x) => x.displayPath), [
-    '<DSH_HOME>/AGENTS.md',
-    'packages/AGENTS.md',
-  ])
+  check('预算 25,000 时：项目链丢掉最宽泛的一份（10,000B 那份）', tiny.omitted.map((x) => x.displayPath), ['packages/AGENTS.md'])
+  check('全局链只有一份 ⇒ 放不下时截断它（官方行为，不是丢弃）', tiny.truncated.map((x) => x.displayPath), ['$DSH_HOME/AGENTS.md'])
+  check('截断后渲染总字节（官方口径）', tiny.renderedBytes, 35064)
 
   // 官方 readBounded：单文件 > maxSourceBytes 会被完全忽略（既不加载也不报错）
   const withHuge = [
@@ -296,7 +298,7 @@ try {
     }
     const rows = await buildLayerView(FIX_SUB, globalState)
     check('每层一行 + 工作区那层的个性化入口', shape(rows), [
-      { displayPath: '<DSH_HOME>/AGENTS.md', layer: 'user-global', enabled: true, exists: true, bytes: 9 },
+      { displayPath: '$DSH_HOME/AGENTS.md', layer: 'user-global', enabled: true, exists: true, bytes: 9 },
       { displayPath: 'AGENTS.md', layer: 'project', enabled: true, exists: true, bytes: 13 },
       { displayPath: 'sub/AGENTS.md', layer: 'project', enabled: true, exists: true, bytes: 12 },
       // 工作区那层额外补的「我的规则（个性化）」入口：AGENTS.local.md 还没建，所以 exists=false
@@ -416,7 +418,7 @@ console.log('\n【10】同目录多候选：全部列出，同内容才去重')
     file: { exists: false, bytes: 0, mtime: null },
   })
   check('同目录候选逐个列出（不折叠）', rows.map((row) => row.displayPath.replaceAll('\\', '/')), [
-    '<DSH_HOME>/AGENTS.md',
+    '$DSH_HOME/AGENTS.md',
     'AGENTS.md',
     'CLAUDE.md',
     'AGENTS.local.md',

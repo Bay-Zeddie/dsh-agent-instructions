@@ -36,11 +36,17 @@ jobs:
       - name: 语义单测（官方语义复刻 + 改名往返）
         run: node tests/official-semantics.test.mjs
 
+      - name: 预算黄金样本（与官方渲染器逐字节一致；golden 值取自 dsh 44.7.0 asar）
+        run: node tests/budget-parity.test.mjs
+
       - name: 界面语言来源（官方 locale 服务优先 + 接线不变量）
         run: node tests/lang-resolution.test.mjs
 
       - name: 接口契约（真实调用 4 条路由 + 字段双向差分 + 语言头跟随）
         run: node tests/contract.test.mjs
+
+      - name: 真实 HTTP 端到端（真 TCP + 栅栏 + 409/413/415/405 + 改名往返）
+        run: node tests/http-e2e.test.mjs
 
       - name: 静态审计（死代码 / 文案键双向 / Host 文案表 / CSS 模板串 / 安全不变量）
         run: node tests/audit-bundle.mjs
@@ -48,5 +54,5 @@ jobs:
       - name: 侧边栏注册契约（真实执行 client factory，stub 浏览器环境）
         run: node tests/sidebar-registrar.test.mjs
 
-      - name: 随机化测试（18 组性质，固定种子）
+      - name: 随机化测试（21 组性质，固定种子）
         run: node tests/fuzz-local.mjs
