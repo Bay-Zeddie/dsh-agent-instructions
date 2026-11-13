@@ -236,7 +236,7 @@ const mark = (file) => (existsSync(file) ? readFileSync(file, 'utf8') : null)
 
 const fixtureRoot = mkdtempSync(join(tmpdir(), 'dsh-agent-semantics-'))
 const FIX_HOME = join(fixtureRoot, 'home')
-/** resolveAgentsHome 在测试进程里读真实用户目录（fixture 不接管 DSH_AGENTS_HOME）。 */
+/** resolveAgentsHome 读 env；上面已把它钉到 fixture 的 agents 目录。 */
 const envHome = () => process.env.DSH_AGENTS_HOME ? resolve(process.env.DSH_AGENTS_HOME) : join(process.env.USERPROFILE ?? '', '.agents')
 const FIX_REPO = join(fixtureRoot, 'repo')
 const FIX_SUB = join(FIX_REPO, 'sub')
@@ -244,6 +244,17 @@ const FIX_OUTSIDE = join(fixtureRoot, 'outside.md')
 mkdirSync(join(FIX_REPO, '.git'), { recursive: true })
 mkdirSync(FIX_SUB, { recursive: true })
 mkdirSync(FIX_HOME, { recursive: true })
+/**
+ * ⚠️ **把测试进程的 home 钉死在 fixture 上**，不要依赖跑测试的机器。
+ * `displayPath` 是官方口径：默认根显示 `~/.dsh` / `~/.agents`，被环境变量覆盖时显示
+ * `$DSH_HOME` / `$DSH_AGENTS_HOME`。不钉 env 的话，本地（dsh 进程带着 DSH_HOME）显示
+ * `$DSH_HOME`、CI（没这个变量）显示 `~/.dsh` —— 同一份断言两种结果，v0.6.0 首跑 CI 即红。
+ * 同理 `DSH_AGENTS_HOME` 指向 fixture 内的空目录：既让 agents 行不出现（行数稳定），
+ * 又让链内白名单的 4 个 agents 形态断言与 fixture 一致。
+ */
+mkdirSync(join(fixtureRoot, 'agents'), { recursive: true })
+process.env.DSH_HOME = FIX_HOME
+process.env.DSH_AGENTS_HOME = join(fixtureRoot, 'agents')
 writeFileSync(join(FIX_HOME, 'AGENTS.md'), '# global\n')
 writeFileSync(join(FIX_REPO, 'AGENTS.md'), '# repo level\n')
 writeFileSync(join(FIX_SUB, 'AGENTS.md'), '# sub level\n')
